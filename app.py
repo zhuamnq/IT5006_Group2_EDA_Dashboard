@@ -78,34 +78,50 @@ with overview:
     )
     left, right = st.columns(2)
     weekday_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    daily = orders.assign(
+        date=orders.order_purchase_timestamp.dt.date,
+        weekday=orders.order_purchase_timestamp.dt.day_name(),
+        hour=orders.order_purchase_timestamp.dt.hour,
+    )
     weekday = (
-        orders.assign(weekday=orders.order_purchase_timestamp.dt.day_name())
-        .groupby("weekday").order_id.nunique().reindex(weekday_order).reset_index(name="orders")
+        daily.groupby(["date", "weekday"]).order_id.nunique().groupby("weekday").mean()
+        .reindex(weekday_order).reset_index(name="average_orders")
     )
     hourly = (
-        orders.assign(hour=orders.order_purchase_timestamp.dt.hour)
-        .groupby("hour").order_id.nunique().reindex(range(24), fill_value=0).reset_index(name="orders")
+        daily.groupby(["date", "hour"]).order_id.nunique().groupby("hour").mean()
+        .reindex(range(24), fill_value=0).reset_index(name="average_orders")
     )
-    left.plotly_chart(px.bar(weekday, x="weekday", y="orders", title="Orders by weekday"), width="stretch")
-    right.plotly_chart(px.line(hourly, x="hour", y="orders", markers=True, title="Orders by hour"), width="stretch")
+    left.plotly_chart(px.bar(weekday, x="weekday", y="average_orders", title="Average daily orders by weekday"), width="stretch")
+    right.plotly_chart(px.line(hourly, x="hour", y="average_orders", markers=True, title="Average hourly order volume"), width="stretch")
 
 with geography:
-    geo_metric = st.radio("Compare states by", ["Orders", "Customers", "Revenue", "Late rate"], horizontal=True)
-    grouped = filtered.groupby("customer_state").agg(
-        Orders=("order_id", "nunique"), Customers=("customer_unique_id", "nunique"), Revenue=("price", "sum")
+    perspective = st.radio("Perspective", ["Customers", "Sellers"], horizontal=True)
+    state_col, entity_col = ("customer_state", "customer_unique_id") if perspective == "Customers" else ("seller_state", "seller_id")
+    geo_metric = st.radio("Compare states by", ["Orders", perspective, "Revenue", "Late rate"], horizontal=True)
+    grouped = filtered.groupby(state_col).agg(
+        Orders=("order_id", "nunique"), Revenue=("price", "sum"), **{perspective: (entity_col, "nunique")}
     )
-    late = orders.groupby("customer_state").delivery_status.apply(lambda x: (x == "Late").mean()).mul(100)
+    late = orders.groupby(state_col).delivery_status.apply(lambda x: (x == "Late").mean()).mul(100)
     grouped["Late rate"] = late
     shown = grouped.reset_index().nlargest(15, geo_metric).sort_values(geo_metric)
     st.plotly_chart(
-        px.bar(shown, x=geo_metric, y="customer_state", orientation="h", title=f"Top customer states by {geo_metric.lower()}"),
+        px.bar(shown, x=geo_metric, y=state_col, orientation="h", title=f"Top {perspective.lower()} states by {geo_metric.lower()}"),
         width="stretch",
     )
+    if perspective == "Customers":
+        repeat = (
+            orders.groupby("customer_unique_id").order_id.nunique().value_counts().sort_index()
+            .rename_axis("orders_per_customer").reset_index(name="customers")
+        )
+        repeat_rate = (orders.groupby("customer_unique_id").order_id.nunique() > 1).mean()
+        st.metric("Repeat-customer rate", f"{repeat_rate:.2%}")
+        st.plotly_chart(px.bar(repeat.head(10), x="orders_per_customer", y="customers", title="Repeat-customer distribution"), width="stretch")
 
 with products:
-    product_metric = st.radio("Rank categories by", ["Items", "Orders", "Revenue"], horizontal=True)
+    product_metric = st.radio("Rank categories by", ["Items", "Orders", "Revenue", "Unique products"], horizontal=True)
     category = filtered.groupby("product_category").agg(
-        Items=("order_item_id", "count"), Orders=("order_id", "nunique"), Revenue=("price", "sum")
+        Items=("order_item_id", "count"), Orders=("order_id", "nunique"),
+        Revenue=("price", "sum"), **{"Unique products": ("product_id", "nunique")}
     ).reset_index()
     shown = category.nlargest(15, product_metric).sort_values(product_metric)
     st.plotly_chart(
@@ -117,9 +133,8 @@ with products:
 with experience:
     usable = orders.dropna(subset=["review_score", "delivery_days"])
     left, right = st.columns(2)
-    score_delivery = usable.groupby("review_score", as_index=False).delivery_days.median()
     left.plotly_chart(
-        px.bar(score_delivery, x="review_score", y="delivery_days", title="Median delivery days by review score"),
+        px.box(usable[usable.delivery_days.between(0, 60)], x="review_score", y="delivery_days", title="Delivery time by review score (0–60 days)"),
         width="stretch",
     )
     review_status = usable.groupby("delivery_status", as_index=False).review_score.mean()
@@ -127,14 +142,17 @@ with experience:
         px.bar(review_status, x="delivery_status", y="review_score", range_y=[0, 5], title="Average review by delivery status"),
         width="stretch",
     )
-    sample = filtered.dropna(subset=["product_weight_g", "freight_value"]).sample(
-        min(3000, filtered[["product_weight_g", "freight_value"]].dropna().shape[0]), random_state=42
-    )
-    st.plotly_chart(
-        px.scatter(sample, x="product_weight_g", y="freight_value", color="product_category",
-                   opacity=0.45, title="Product weight vs freight value (sample up to 3,000 items)"),
-        width="stretch",
-    )
+    correlation_columns = ["price", "freight_value", "product_weight_g", "product_length_cm", "product_height_cm", "product_width_cm"]
+    corr = filtered[correlation_columns].corr().round(2)
+    st.plotly_chart(px.imshow(corr, text_auto=True, color_continuous_scale="RdBu_r", zmin=-1, zmax=1,
+                              title="Correlation matrix of product and freight variables"), width="stretch")
+    scatter_left, scatter_right = st.columns(2)
+    sample = filtered.dropna(subset=["product_weight_g", "freight_value"]).sample(min(3000, filtered.dropna(subset=["product_weight_g", "freight_value"]).shape[0]), random_state=42)
+    scatter_left.plotly_chart(px.scatter(sample, x="product_weight_g", y="freight_value", opacity=0.4,
+                                          title="Product weight vs freight value"), width="stretch")
+    price_sample = filtered.dropna(subset=["price", "freight_value"]).sample(min(3000, filtered.dropna(subset=["price", "freight_value"]).shape[0]), random_state=42)
+    scatter_right.plotly_chart(px.scatter(price_sample, x="price", y="freight_value", opacity=0.4,
+                                           title="Product price vs freight value"), width="stretch")
 
 with st.expander("Filtered data"):
     st.dataframe(filtered.head(1000), hide_index=True, width="stretch")

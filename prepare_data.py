@@ -54,10 +54,12 @@ def main():
     data["product_category"] = data["product_category_name_english"].fillna("Unknown")
 
     keep = [
-        "order_id", "order_item_id", "customer_unique_id", "order_status",
+        "order_id", "order_item_id", "product_id", "seller_id",
+        "customer_unique_id", "order_status",
         "order_purchase_timestamp", "customer_state", "seller_state",
         "product_category", "price", "freight_value", "review_score",
-        "product_weight_g", "delivery_days", "delay_days", "delivery_status",
+        "product_weight_g", "product_length_cm", "product_height_cm",
+        "product_width_cm", "delivery_days", "delay_days", "delivery_status",
     ]
     OUT.parent.mkdir(exist_ok=True)
     data[keep].to_csv(OUT, index=False, compression="gzip")
