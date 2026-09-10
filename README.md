@@ -2,7 +2,7 @@
 
 Interactive exploratory dashboard for IT5006 Milestone 1, built with Streamlit.
 
-**Live app:** https://it5006-group2-eda-dashboard.streamlit.app/
+**Live app:** https://it5006-group2-dashboard.streamlit.app/
 
 ## Run locally
 
