@@ -142,6 +142,22 @@ with experience:
         px.bar(review_status, x="delivery_status", y="review_score", range_y=[0, 5], title="Average review by delivery status"),
         width="stretch",
     )
+    order_level = filtered.groupby("order_id", as_index=False).agg(
+        order_value=("price", "sum"), freight_value=("freight_value", "sum"),
+        item_count=("order_item_id", "count"), payment_value=("payment_value", "first"),
+        payment_installments=("payment_installments", "first"), delivery_days=("delivery_days", "first"),
+        delay_days=("delay_days", "first"), review_score=("review_score", "first"),
+    )
+    overall_columns = [
+        "order_value", "freight_value", "item_count", "payment_value",
+        "payment_installments", "delivery_days", "delay_days", "review_score",
+    ]
+    st.plotly_chart(
+        px.imshow(order_level[overall_columns].corr().round(2), text_auto=True,
+                  color_continuous_scale="RdBu_r", zmin=-1, zmax=1,
+                  title="Overall correlation matrix at order level"),
+        width="stretch",
+    )
     correlation_columns = ["price", "freight_value", "product_weight_g", "product_length_cm", "product_height_cm", "product_width_cm"]
     corr = filtered[correlation_columns].corr().round(2)
     st.plotly_chart(px.imshow(corr, text_auto=True, color_continuous_scale="RdBu_r", zmin=-1, zmax=1,
