@@ -10,7 +10,7 @@ DATA = Path(__file__).with_name("data") / "olist_dashboard.csv.gz"
 
 
 @st.cache_data
-def load_data():
+def load_data(version):
     return pd.read_csv(DATA, parse_dates=["order_purchase_timestamp"])
 
 
@@ -19,7 +19,7 @@ def multiselect(label, values):
     return st.sidebar.multiselect(label, options, placeholder="All")
 
 
-data = load_data()
+data = load_data(2)
 st.title("🛒 Olist E-commerce Explorer")
 st.caption("Explore when, where and what customers bought, and how delivery performance relates to reviews.")
 
