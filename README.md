@@ -2,6 +2,8 @@
 
 Interactive exploratory dashboard for IT5006 Milestone 1, built with Streamlit.
 
+**Live app:** https://qqubgvumdfegcz6wqwtgy8.streamlit.app/
+
 ## Run locally
 
 ```bash
